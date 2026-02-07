@@ -20,7 +20,7 @@ import React, { useState, useEffect } from 'react';
 import { AlertCircle, Zap } from 'lucide-react';
 import { useAuth } from '@/_core/hooks/useAuth';
 import BulkUploader, { UploadedFile } from '@/components/BulkUploader';
-import ConversionResults, { ConversionResult } from '@/components/ConversionResults';
+import ConversionResultsEnhanced from '@/components/ConversionResultsEnhanced';
 import ConversionSettings from '@/components/ConversionSettings';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -36,7 +36,7 @@ export default function Home() {
   let { user, loading, error, isAuthenticated, logout } = useAuth();
 
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-  const [results, setResults] = useState<ConversionResult[]>([]);
+  const [results, setResults] = useState<any[]>([]);
   const [params, setParams] = useState<ConversionParams>(DEFAULT_PARAMS);
   const [queueState, setQueueState] = useState<QueueState>({
     isProcessing: false,
@@ -202,7 +202,7 @@ export default function Home() {
         {results.length > 0 && (
           <Card className="p-6 bg-slate-800 border-slate-700">
             <h2 className="text-lg font-semibold text-white mb-4">Conversion Results</h2>
-            <ConversionResults results={results} />
+            <ConversionResultsEnhanced results={results} />
             {!queueState.isProcessing && (
               <div className="mt-6 flex gap-3">
                 <Button
