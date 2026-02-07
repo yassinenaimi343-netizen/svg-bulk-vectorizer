@@ -128,7 +128,31 @@ export default function ExportOptions({
       });
 
       // Convert SVG to PDF preserving vector quality
-      await svg2pdf.default(svgElement, pdf);
+      try {
+        await svg2pdf.default(svgElement, pdf);
+      } catch (e) {
+        console.warn('svg2pdf failed, using fallback:', e);
+        // Fallback: render as image
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        const svgData = new XMLSerializer().serializeToString(svgElement);
+        
+        canvas.width = width || 800;
+        canvas.height = height || 600;
+        
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => {
+            ctx?.drawImage(img, 0, 0);
+            resolve();
+          };
+          img.onerror = () => reject(new Error('Failed to load SVG'));
+          img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+        });
+        
+        const imgData = canvas.toDataURL('image/png');
+        pdf.addImage(imgData, 'PNG', 0, 0, width, height);
+      }
 
       // Download
       const pdfBlob = pdf.output('blob');
@@ -188,15 +212,18 @@ grestore
 showpage
 %%EOF`;
 
-      const element = document.createElement('a');
-      element.href = `data:application/postscript;base64,${btoa(aiContent)}`;
-      element.download = fileName.replace(/\.[^/.]+$/, '.ai');
-      element.style.display = 'none';
-      document.body.appendChild(element);
-      element.click();
-      document.body.removeChild(element);
+      // Use Blob for better compatibility instead of data URI
+      const blob = new Blob([aiContent], { type: 'application/postscript' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = fileName.replace(/\.[^/.]+$/, '.ai');
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
 
-      toast.success(`Downloaded ${element.download}`);
+      toast.success(`Downloaded ${link.download}`);
     } catch (error: any) {
       console.error('AI export failed:', error);
       toast.error(`AI export failed: ${error.message}`);
