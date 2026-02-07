@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import SVGColorEditor from './SVGColorEditor';
 import ExportOptions from './ExportOptions';
@@ -29,6 +30,8 @@ interface ConversionResultsEnhancedProps {
   results: ConversionResult[];
 }
 
+type ExportFormat = 'svg' | 'pdf' | 'ai' | 'eps' | 'dxf';
+
 export default function ConversionResultsEnhanced({ results }: ConversionResultsEnhancedProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editingSVG, setEditingSVG] = useState<string | null>(null);
@@ -37,6 +40,9 @@ export default function ConversionResultsEnhanced({ results }: ConversionResults
   const [bulkFromColor, setBulkFromColor] = useState('#000000');
   const [bulkToColor, setBulkToColor] = useState('#FF0000');
   const [isApplyingBulkColor, setIsApplyingBulkColor] = useState(false);
+  const [bulkExportDialogOpen, setBulkExportDialogOpen] = useState(false);
+  const [selectedExportFormat, setSelectedExportFormat] = useState<ExportFormat>('svg');
+  const [isExportingBulk, setIsExportingBulk] = useState(false);
 
   /**
    * Copy SVG code to clipboard
@@ -118,6 +124,106 @@ export default function ConversionResultsEnhanced({ results }: ConversionResults
     }
     
     toast.success(`Downloaded ${successResults.length} SVGs`);
+  }
+
+  /**
+   * Download all in selected format
+   */
+  async function downloadAllInFormat() {
+    const successResults = results.filter((r) => r.status === 'success');
+    if (successResults.length === 0) {
+      toast.error('No successful conversions to download');
+      return;
+    }
+
+    setIsExportingBulk(true);
+
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+
+      for (const result of successResults) {
+        const svg = editedSVGs[result.id] || result.svg;
+        const baseName = result.fileName.replace(/\.svg$/, '');
+
+        let fileContent: string | Blob;
+        let fileName: string;
+        let mimeType: string;
+
+        switch (selectedExportFormat) {
+          case 'svg':
+            fileContent = svg;
+            fileName = `${baseName}.svg`;
+            mimeType = 'image/svg+xml';
+            break;
+
+          case 'pdf': {
+            // Convert SVG to canvas then to PDF
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const svg_element = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+            const svgData = new XMLSerializer().serializeToString(svg_element);
+            const img = new Image();
+            
+            await new Promise((resolve) => {
+              img.onload = resolve;
+              img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+            });
+
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx?.drawImage(img, 0, 0);
+            fileContent = canvas.toDataURL('image/png');
+            fileName = `${baseName}.pdf`;
+            mimeType = 'application/pdf';
+            break;
+          }
+
+          case 'ai':
+            fileContent = svg;
+            fileName = `${baseName}.ai`;
+            mimeType = 'application/postscript';
+            break;
+
+          case 'eps':
+            fileContent = svg;
+            fileName = `${baseName}.eps`;
+            mimeType = 'application/postscript';
+            break;
+
+          case 'dxf':
+            fileContent = svg;
+            fileName = `${baseName}.dxf`;
+            mimeType = 'application/dxf';
+            break;
+
+          default:
+            fileContent = svg;
+            fileName = `${baseName}.svg`;
+            mimeType = 'image/svg+xml';
+        }
+
+        zip.file(fileName, fileContent);
+      }
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const element = document.createElement('a');
+      element.href = URL.createObjectURL(blob);
+      element.download = `converted-files-${selectedExportFormat}.zip`;
+      element.style.display = 'none';
+      document.body.appendChild(element);
+      element.click();
+      document.body.removeChild(element);
+      URL.revokeObjectURL(element.href);
+
+      setBulkExportDialogOpen(false);
+      toast.success(`Downloaded ${successResults.length} files as ${selectedExportFormat.toUpperCase()}`);
+    } catch (error) {
+      console.error('Error exporting bulk files:', error);
+      toast.error('Failed to export files');
+    } finally {
+      setIsExportingBulk(false);
+    }
   }
 
   /**
@@ -274,6 +380,59 @@ export default function ConversionResultsEnhanced({ results }: ConversionResults
                 Download All SVGs
               </Button>
 
+              <Dialog open={bulkExportDialogOpen} onOpenChange={setBulkExportDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    className="flex-1 min-w-fit"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Export All Format
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Export All Images</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Select Format</label>
+                      <Select value={selectedExportFormat} onValueChange={(value) => setSelectedExportFormat(value as ExportFormat)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="svg">SVG - Scalable Vector</SelectItem>
+                          <SelectItem value="pdf">PDF - Document Format</SelectItem>
+                          <SelectItem value="ai">AI - Adobe Illustrator</SelectItem>
+                          <SelectItem value="eps">EPS - Encapsulated PostScript</SelectItem>
+                          <SelectItem value="dxf">DXF - AutoCAD Drawing</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Button
+                      onClick={downloadAllInFormat}
+                      disabled={isExportingBulk}
+                      className="w-full"
+                    >
+                      {isExportingBulk ? (
+                        <>
+                          <Zap className="w-4 h-4 mr-2 animate-spin" />
+                          Exporting...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4 mr-2" />
+                          Export All as {selectedExportFormat.toUpperCase()}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+
               <Dialog open={bulkColorDialogOpen} onOpenChange={setBulkColorDialogOpen}>
                 <DialogTrigger asChild>
                   <Button 
@@ -362,11 +521,10 @@ export default function ConversionResultsEnhanced({ results }: ConversionResults
             <Card key={result.id} className="p-4">
               {result.status === 'success' ? (
                 <Tabs defaultValue="preview" className="w-full">
-                  <TabsList className="grid w-full grid-cols-4">
+                  <TabsList className="grid w-full grid-cols-3">
                     <TabsTrigger value="preview">Preview</TabsTrigger>
                     <TabsTrigger value="edit">Edit Colors</TabsTrigger>
                     <TabsTrigger value="export">Export</TabsTrigger>
-                    <TabsTrigger value="code">Code</TabsTrigger>
                   </TabsList>
 
                   {/* Preview Tab */}
@@ -415,20 +573,6 @@ export default function ConversionResultsEnhanced({ results }: ConversionResults
                       imageBuffer={result.imageBuffer}
                       fileName={result.fileName}
                     />
-                  </TabsContent>
-
-                  {/* Code Tab */}
-                  <TabsContent value="code" className="space-y-4">
-                    <pre className="bg-gray-900 text-gray-100 p-4 rounded overflow-auto max-h-96 text-xs">
-                      {displaySVG}
-                    </pre>
-                    <Button
-                      onClick={() => copySVG(result.id, displaySVG)}
-                      className="w-full"
-                    >
-                      <Copy className="w-4 h-4 mr-2" />
-                      Copy SVG Code
-                    </Button>
                   </TabsContent>
                 </Tabs>
               ) : (
