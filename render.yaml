@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: svg-bulk-vectorizer
+    runtime: node
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+    healthCheckPath: /
